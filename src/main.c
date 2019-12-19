@@ -8,6 +8,7 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <avr/sleep.h>
+#include <avr/power.h>
 
 // TODO Move these defines into a header for cleanliness
 /**@brief PORTB ID belonging to the WS2812B data pin*/
@@ -75,7 +76,17 @@ int main (void)
   // configure device for power-saving
   // first, configure sleep mode to "Power-down", which allows only interrupts
   set_sleep_mode(SLEEP_MODE_PWR_DOWN);
-  // TODO Other configs see http://www.nongnu.org/avr-libc/user-manual/group__avr__power.html
+
+  // next, disable the ADC since we aren't using it
+  power_adc_disable();
+
+  // disable universal serial interface
+  power_usi_disable();
+
+  // disable unecessary timers
+  power_timer0_disable();
+  power_timer1_disable();
+
 
   // loop indefinitely
   for (;;)
