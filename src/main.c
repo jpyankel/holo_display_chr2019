@@ -9,6 +9,8 @@
 #include <avr/interrupt.h>
 #include <avr/sleep.h>
 #include <avr/power.h>
+#include <util/delay.h>
+#include "../external/include/light_ws2812.h"
 
 // TODO Move these defines into a header for cleanliness
 /**@brief PORTB ID belonging to the WS2812B data pin*/
@@ -31,17 +33,32 @@
  */
 #define GIMSK_PCIE ((char)(1 << PCIE))
 
+/**@brief Number of WS2812B LEDs*/
+#define NUM_LEDS 4
+
+/**@brief Maximum color value of any color component in a single LED*/
+#define MAX_COMP_VAL 128
+
+/**@brief Delay between color updates in ms*/
+#define COLOR_DELAY 256
+
 /**@brief Program state enum
  * @details SLEEP indicates the program is in sleep mode;
  *          ACTIVE indicates the program is running.
  */
 typedef enum prog_state {SLEEP, ACTIVE}prog_state;
 
+/**@brief LED light show next target enum
+ * @details SLEEP indicates the program is in sleep mode;
+ *          ACTIVE indicates the program is running.
+ */
+typedef enum next_color_target {RED, GREEN, BLUE}next_color_target;
+
 /**@brief Current mode of operation (SLEEP or ACTIVE)
  * @details When 1, the device is ACTIVE; When 0, the device is in SLEEP mode.
  *          We use this to determine when the program should save power.
  */
-prog_state volatile state = 1;
+prog_state volatile state = ACTIVE;
 
 /**@brief pin-change-interrupt 0 (PCINT0) connected to sleep button input
  *
@@ -64,9 +81,6 @@ int main (void)
   // in addition, the sleep button uses a pull-up resistor
   PORTB |= PORTB_UNUSED | PORTB_SLEEP;
 
-  // initialize WS2812B support
-  // TODO
-
   // initialize sleep button pin-change-interrupt (PCINT0)
   PCMSK |= PCINT_SLEEP;
 
@@ -87,6 +101,19 @@ int main (void)
   power_timer0_disable();
   power_timer1_disable();
 
+  // initialize each LED's intial color to be offset from each other:
+  struct cRGB colors[NUM_LEDS];
+  next_color_target color_targs[NUM_LEDS];
+  for (unsigned char i = 0; i < NUM_LEDS; i++)
+  {
+    // red is the first target color
+    color_targs[i] = RED;
+
+    // offset red color by the maximum LED value / number of leds
+    colors[i].r = MAX_COMP_VAL / NUM_LEDS * i;
+    colors[i].g = 0;
+    colors[i].b = 0;
+  }
 
   // loop indefinitely
   for (;;)
@@ -96,7 +123,43 @@ int main (void)
 
     if (state == ACTIVE)
     {
-      // TODO
+      // all LEDs get sent an identical color
+      ws2812_setleds(colors, NUM_LEDS);
+
+      // delay a certain time before sending the next color
+      _delay_ms(COLOR_DELAY);
+
+      // rotate colors around using a fade
+      for (unsigned char i = 0; i < NUM_LEDS; i++)
+      {
+        switch (color_targs[i])
+        {
+          case RED:
+            if (colors[i].r < MAX_COMP_VAL)
+              colors[i].r++;
+            if (colors[i].b > 0)
+              colors[i].b--;
+            if (colors[i].r == MAX_COMP_VAL && colors[i].b == 0)
+              color_targs[i] = GREEN;
+            break;
+          case GREEN:
+            if (colors[i].g < MAX_COMP_VAL)
+              colors[i].g++;
+            if (colors[i].r > 0)
+              colors[i].r--;
+            if (colors[i].g == MAX_COMP_VAL && colors[i].r == 0)
+              color_targs[i] = BLUE;
+            break;
+          case BLUE:
+            if (colors[i].b < MAX_COMP_VAL)
+              colors[i].b++;
+            if (colors[i].g > 0)
+              colors[i].g--;
+            if (colors[i].b == MAX_COMP_VAL && colors[i].g == 0)
+              color_targs[i] = RED;
+            break;
+        }
+      }
     }
     else
     {

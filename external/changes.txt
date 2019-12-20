@@ -1,0 +1,3 @@
+- Removed all project files except light_ws2812.h and light_ws2812.c
+- Reconfigured defaults in light_ws2812.h to match this project
+- Updated light_ws2812.c import of light_ws2812.h to match new project layout

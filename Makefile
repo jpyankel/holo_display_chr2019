@@ -38,6 +38,10 @@ OBJ = $(SRC:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 
 default: build
 
+# WS2812B external library
+$(OBJ_DIR)/light_ws2812.o: external/src/light_ws2812.c external/include/light_ws2812.h
+	$(CC) $(CFLAG) -c external/src/light_ws2812.c -o $(OBJ_DIR)/light_ws2812.o
+
 # compiles c source files to obj files
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 	# if build folder hasn't been built yet, create it now
@@ -46,7 +50,7 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 	$(CC) $(CFLAG) -c $< -o $@
 
 # builds hex file to flash to mcu
-build: $(OBJ)
+build: $(OBJ_DIR)/light_ws2812.o $(OBJ)
 	# link obj files to executable
 	$(CC) -o $(OBJ_DIR)/$(EXE).elf $^
 
