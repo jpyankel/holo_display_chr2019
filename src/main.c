@@ -14,13 +14,22 @@
 
 // TODO Move these defines into a header for cleanliness
 /**@brief PORTB ID belonging to the WS2812B data pin*/
-#define PORTB_DATA ((char)(1 << PB1))
+#define PORTB_DATA ((char)(1 << PB2))
 
 /**@brief PORTB ID belonging to the sleep button input pin*/
 #define PORTB_SLEEP ((char)(1 << PB0))
 
+/**@brief Bit vector containing a 1 corresponding to the LED power pin
+ * @details PORTB |= DDRB_LEDPOWER will output HIGH on the LED power pin
+ *          PORTB &= ~DDRB_LEDPOWER will output LOW on the LED power pin
+ */
+#define PORTB_LEDPOWER ((char)(1 << PB3))
+
+/**@brief Bit vector with 1s representing not available/read only PORTB pins*/
+#define PORTB_UNAVAILABLE ((char)((1 << 7) | (1 << 6)))
+
 /**@brief Bit vector with 1s representing unused PORTB pins*/
-#define PORTB_UNUSED ((char)(~(PORTB_DATA | PORTB_SLEEP)))
+#define PORTB_UNUSED ((char)(~(PORTB_DATA | PORTB_SLEEP | PORTB_LEDPOWER | PORTB_UNAVAILABLE)))
 
 /**@brief Pin-Change Interrupt bit corresponding to sleep button input pin
  * @details Setting configures the IO pin to cause a pin-change interrupt when
@@ -32,6 +41,11 @@
  * @details Setting enables all configured pin-change interrupts
  */
 #define GIMSK_PCIE ((char)(1 << PCIE))
+
+/**@brief Direction data register configuration for the LED power pin
+ * @details Setting switches LED power pin from read to write
+ */
+#define DDRB_LEDPOWER ((char)(1 << DDB3))
 
 /**@brief Number of WS2812B LEDs*/
 #define NUM_LEDS 4
@@ -66,27 +80,20 @@ prog_state volatile state = ACTIVE;
  */
 ISR(PCINT0_vect)
 {
-  // toggle mcu state
-  state = !state;
+  // preserve status reg.
+  char prev_SREG = SREG;
 
+  // toggle mcu state
+  state = (ACTIVE) ? SLEEP : ACTIVE;
   // the above will apply when we return to our run-loop
+
+  // restore status reg.
+  SREG = prev_SREG;
 }
 
 // TODO Document
 int main (void)
 {
-  // DDRB is already initialized to 0, meaning all pins are defaulted to input
-
-  // to save power, we enable pull-up resistors on all unused inputs
-  // in addition, the sleep button uses a pull-up resistor
-  PORTB |= PORTB_UNUSED | PORTB_SLEEP;
-
-  // initialize sleep button pin-change-interrupt (PCINT0)
-  PCMSK |= PCINT_SLEEP;
-
-  // enable pin-change-interrupts (required for sleep button interrupt)
-  GIMSK |= GIMSK_PCIE;
-
   // configure device for power-saving
   // first, configure sleep mode to "Power-down", which allows only interrupts
   set_sleep_mode(SLEEP_MODE_PWR_DOWN);
@@ -100,6 +107,24 @@ int main (void)
   // disable unecessary timers
   power_timer0_disable();
   power_timer1_disable();
+
+  // DDRB is already initialized to 0, meaning all pins are defaulted to input
+
+  // to enable and disable power to the LEDs, we drive the base of a BJT with a
+  //   GPIO pin. we configure this pin now
+  DDRB |= DDRB_LEDPOWER;
+  PORTB |= PORTB_LEDPOWER;
+
+  // to save power, we enable pull-up resistors on all unused inputs
+  // in addition, the sleep button uses a pull-up resistor
+  PORTB |= PORTB_UNUSED | PORTB_SLEEP;
+
+  // initialize sleep button pin-change-interrupt (PCINT0)
+  PCMSK |= PCINT_SLEEP;
+
+  // enable pin-change-interrupts (required for sleep button interrupt)
+  GIMSK |= GIMSK_PCIE;
+
 
   // initialize each LED's intial color to be offset from each other:
   struct cRGB colors[NUM_LEDS];
@@ -163,6 +188,9 @@ int main (void)
     }
     else
     {
+      // turn off power to the LED strip
+      PORTB &= ~PORTB_LEDPOWER;
+
       // code sequence sourced from:
       // http://www.nongnu.org/avr-libc/user-manual/group__avr__sleep.html
 
@@ -173,6 +201,9 @@ int main (void)
       sei();
       sleep_cpu();
       sleep_disable();
+
+      // turn on power to the LED strip
+      PORTB |= PORTB_LEDPOWER;
     }
 
     // manually set the status reg I-bit to allow interrupts
